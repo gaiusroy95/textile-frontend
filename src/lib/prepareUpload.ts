@@ -1,6 +1,6 @@
 /** Resize large photos before upload — faster upload + faster server rembg. */
 
-const MAX_DIMENSION = 1280;
+const MAX_DIMENSION = 768;
 const JPEG_QUALITY = 0.9;
 
 export async function prepareUploadFile(file: File): Promise<File> {
