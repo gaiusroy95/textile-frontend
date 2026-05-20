@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkHealth } from "@/lib/api";
+import { API_URL, checkHealth } from "@/lib/api";
 import { Studio } from "@/components/Studio";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -16,8 +16,9 @@ export default function App() {
     <ThemeProvider>
       {apiOk === false && (
         <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-center text-sm text-amber-600 dark:text-amber-400">
-          Backend offline — start API at{" "}
-          <code className="rounded bg-black/10 px-1">localhost:8000</code>
+          Backend unreachable — check API at{" "}
+          <code className="rounded bg-black/10 px-1">{API_URL}</code>
+          {" "}(and CORS_ORIGINS on the server)
         </div>
       )}
       <Studio />
