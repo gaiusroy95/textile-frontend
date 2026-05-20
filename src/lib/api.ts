@@ -4,10 +4,17 @@
 
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+const TIMEOUT = {
+  extract: 5 * 60 * 1000,
+  seamless: 3 * 60 * 1000,
+  variations: 4 * 60 * 1000,
+  default: 2 * 60 * 1000,
+} as const;
+
 export type ExtractResponse = {
   session_id: string;
   image_url: string;
-  image_base64: string;
+  image_base64?: string;
   metadata: Record<string, unknown>;
 };
 
@@ -15,15 +22,15 @@ export type SeamlessResponse = {
   session_id: string;
   tile_url: string;
   preview_url: string;
-  tile_base64: string;
-  preview_base64: string;
+  tile_base64?: string;
+  preview_base64?: string;
   metadata: Record<string, unknown>;
 };
 
 export type VariationItem = {
   index: number;
   url: string;
-  image_base64: string;
+  image_base64?: string;
 };
 
 export type VariationsResponse = {
@@ -42,14 +49,41 @@ export function base64ToDataUrl(b64: string, mime = "image/png"): string {
   return `data:${mime};base64,${b64}`;
 }
 
+function resolveImageSrc(url: string, base64?: string): string {
+  if (base64) return base64ToDataUrl(base64);
+  return url;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(
+        "Request timed out. On free hosting the first run can take 1–2 minutes — try again, or use a smaller image."
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function extractFabric(file: File): Promise<ExtractResponse> {
   const form = new FormData();
   form.append("file", file);
 
-  const res = await fetch(`${API_URL}/extract-fabric`, {
-    method: "POST",
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    `${API_URL}/extract-fabric`,
+    { method: "POST", body: form },
+    TIMEOUT.extract
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { detail?: string }).detail || "Fabric extraction failed");
@@ -66,10 +100,11 @@ export async function generateSeamless(
   form.append("session_id", sessionId);
   if (imageBase64) form.append("image_base64", imageBase64);
 
-  const res = await fetch(`${API_URL}/generate-seamless`, {
-    method: "POST",
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    `${API_URL}/generate-seamless`,
+    { method: "POST", body: form },
+    TIMEOUT.seamless
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { detail?: string }).detail || "Seamless generation failed");
@@ -91,10 +126,11 @@ export async function generateVariations(
   if (prompt) form.append("prompt", prompt);
   form.append("count", "3");
 
-  const res = await fetch(`${API_URL}/generate-variations`, {
-    method: "POST",
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    `${API_URL}/generate-variations`,
+    { method: "POST", body: form },
+    TIMEOUT.variations
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { detail?: string }).detail || "Variation generation failed");
@@ -109,23 +145,26 @@ export async function generateVariations(
   };
 }
 
+export { resolveImageSrc };
+
 export async function exportCanvas(imageBase64: string, sessionId?: string): Promise<Blob> {
   const form = new FormData();
   form.append("image_base64", imageBase64);
   form.append("download", "true");
   if (sessionId) form.append("session_id", sessionId);
 
-  const res = await fetch(`${API_URL}/export`, {
-    method: "POST",
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    `${API_URL}/export`,
+    { method: "POST", body: form },
+    TIMEOUT.default
+  );
   if (!res.ok) throw new Error("Export failed");
   return res.blob();
 }
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/health`, { cache: "no-store" });
+    const res = await fetchWithTimeout(`${API_URL}/health`, { cache: "no-store" }, 15000);
     return res.ok;
   } catch {
     return false;

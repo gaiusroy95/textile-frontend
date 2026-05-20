@@ -9,12 +9,13 @@ import {
   AlertCircle,
 } from "lucide-react";
 import {
-  base64ToDataUrl,
   extractFabric,
   exportCanvas,
   generateSeamless,
   generateVariations,
+  resolveImageSrc,
 } from "@/lib/api";
+import { prepareUploadFile } from "@/lib/prepareUpload";
 import { initialState, type AppState } from "@/lib/types";
 import { Header } from "./Header";
 import { StepIndicator } from "./StepIndicator";
@@ -42,15 +43,20 @@ export function Studio() {
         ...s,
         originalPreview: preview,
         loading: true,
-        loadingMessage: "Removing background & extracting fabric…",
+        loadingMessage:
+          "Removing background & extracting fabric… (first run on cloud may take 1–2 min)",
         error: null,
         step: "extract",
       };
     });
 
     try {
-      const extracted = await extractFabric(file);
-      const extractedUrl = base64ToDataUrl(extracted.image_base64);
+      const uploadFile = await prepareUploadFile(file);
+      const extracted = await extractFabric(uploadFile);
+      const extractedUrl = resolveImageSrc(
+        extracted.image_url,
+        extracted.image_base64
+      );
 
       setState((s) => ({
         ...s,
@@ -61,8 +67,11 @@ export function Studio() {
       }));
 
       const seamless = await generateSeamless(extracted.session_id);
-      const tileUrl = base64ToDataUrl(seamless.tile_base64);
-      const previewUrl = base64ToDataUrl(seamless.preview_base64);
+      const tileUrl = resolveImageSrc(seamless.tile_url, seamless.tile_base64);
+      const previewUrl = resolveImageSrc(
+        seamless.preview_url,
+        seamless.preview_base64
+      );
 
       setState((s) => ({
         ...s,
@@ -74,7 +83,7 @@ export function Studio() {
 
       const vars = await generateVariations(seamless.session_id, prompt);
       const variationUrls = vars.variations.map((v) =>
-        base64ToDataUrl(v.image_base64)
+        resolveImageSrc(v.url, v.image_base64)
       );
 
       setState((s) => ({
