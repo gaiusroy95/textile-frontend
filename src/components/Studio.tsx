@@ -10,11 +10,11 @@ import {
 } from "lucide-react";
 import {
   extractFabric,
-  exportCanvas,
   generateSeamless,
   generateVariations,
   resolveImageSrc,
 } from "@/lib/api";
+import { downloadPng } from "@/lib/download";
 import { prepareUploadFile } from "@/lib/prepareUpload";
 import { initialState, type AppState } from "@/lib/types";
 import { Header } from "./Header";
@@ -27,7 +27,7 @@ import { FabricCanvas } from "./FabricCanvas";
 
 export function Studio() {
   const [state, setState] = useState<AppState>(initialState);
-  const exportRef = useRef<(() => string) | null>(null);
+  const exportRef = useRef<(() => string) | null>(null); // returns PNG data URL
 
   const set = useCallback((patch: Partial<AppState>) => {
     setState((s) => ({ ...s, ...patch }));
@@ -104,26 +104,23 @@ export function Studio() {
     }
   }, []);
 
-  const handleExport = async () => {
-    const getB64 = exportRef.current;
-    if (!getB64) {
-      set({ error: "Canvas not ready" });
+  const handleExport = () => {
+    const getDataUrl = exportRef.current;
+    if (!getDataUrl) {
+      set({ error: "Canvas not ready — wait for layers to load" });
       return;
     }
-    set({ loading: true, loadingMessage: "Exporting PNG…", step: "export" });
     try {
-      const b64 = getB64();
-      const blob = await exportCanvas(b64, state.sessionId || undefined);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "textile-design.png";
-      a.click();
-      URL.revokeObjectURL(url);
-      set({ loading: false, step: "export" });
+      const dataUrl = getDataUrl();
+      if (!dataUrl || dataUrl.length < 200) {
+        throw new Error(
+          "Canvas export failed. Layers may be blocked by CORS — refresh and try again."
+        );
+      }
+      downloadPng(dataUrl, "textile-design.png");
+      set({ error: null, step: "export" });
     } catch (err) {
       set({
-        loading: false,
         error: err instanceof Error ? err.message : "Export failed",
       });
     }

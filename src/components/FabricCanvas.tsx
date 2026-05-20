@@ -10,16 +10,39 @@ export type LayerInfo = {
 
 type Props = {
   layers: { url: string; name: string }[];
-  onExportReady?: (getPngBase64: () => string) => void;
+  /** Returns a PNG data URL ready for download */
+  onExportReady?: (getPngDataUrl: () => string) => void;
 };
+
+/** Fetch cross-origin API images as blob URLs so the canvas is not tainted. */
+async function resolveLayerUrl(url: string): Promise<string> {
+  if (url.startsWith("data:") || url.startsWith("blob:")) {
+    return url;
+  }
+
+  const res = await fetch(url, { mode: "cors", credentials: "omit" });
+  if (!res.ok) {
+    throw new Error(`Could not load layer image (${res.status})`);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
 
 export function FabricCanvas({ layers, onExportReady }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<Canvas | null>(null);
+  const blobUrlsRef = useRef<string[]>([]);
   const [layerList, setLayerList] = useState<LayerInfo[]>([]);
 
   const exportCbRef = useRef(onExportReady);
   exportCbRef.current = onExportReady;
+
+  const registerExport = (canvas: Canvas) => {
+    exportCbRef.current?.(() => {
+      canvas.renderAll();
+      return canvas.toDataURL({ format: "png", multiplier: 2 });
+    });
+  };
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -32,33 +55,46 @@ export function FabricCanvas({ layers, onExportReady }: Props) {
     });
     fabricRef.current = canvas;
 
-    exportCbRef.current?.(() => {
-      const dataUrl = canvas.toDataURL({ format: "png", multiplier: 2 });
-      return dataUrl.split(",")[1] || "";
-    });
-
     return () => {
       canvas.dispose();
       fabricRef.current = null;
+      blobUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+      blobUrlsRef.current = [];
     };
   }, []);
 
   useEffect(() => {
     const canvas = fabricRef.current;
-    if (!canvas || layers.length === 0) return;
+    if (!canvas) return;
 
-    canvas.clear();
-    canvas.backgroundColor = "#1e293b";
+    let cancelled = false;
 
     const loadAll = async () => {
+      blobUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+      blobUrlsRef.current = [];
+
+      canvas.clear();
+      canvas.backgroundColor = "#1e293b";
+
+      if (layers.length === 0) {
+        setLayerList([]);
+        return;
+      }
+
       const infos: LayerInfo[] = [];
 
       for (let i = 0; i < layers.length; i++) {
+        if (cancelled) return;
         const layer = layers[i];
         try {
-          const img = await FabricImage.fromURL(layer.url, {
-            crossOrigin: "anonymous",
-          });
+          const src = await resolveLayerUrl(layer.url);
+          if (src.startsWith("blob:")) {
+            blobUrlsRef.current.push(src);
+          }
+
+          const img = await FabricImage.fromURL(src);
+          if (cancelled) return;
+
           const scale = Math.min(
             (canvas.width! * 0.85) / (img.width || 1),
             (canvas.height! * 0.85) / (img.height || 1)
@@ -79,11 +115,17 @@ export function FabricCanvas({ layers, onExportReady }: Props) {
           console.error("Failed to load layer", layer.name, e);
         }
       }
+
       canvas.renderAll();
       setLayerList(infos);
+      registerExport(canvas);
     };
 
     loadAll();
+
+    return () => {
+      cancelled = true;
+    };
   }, [layers]);
 
   const toggleVisibility = (index: number) => {
@@ -103,7 +145,9 @@ export function FabricCanvas({ layers, onExportReady }: Props) {
     if (!canvas) return;
     const obj = canvas.getObjects()[index];
     if (obj) canvas.remove(obj);
+    canvas.renderAll();
     setLayerList((prev) => prev.filter((_, i) => i !== index));
+    registerExport(canvas);
   };
 
   return (
