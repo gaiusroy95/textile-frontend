@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #f8fafc;
+  --surface-elevated: #ffffff;
+  --border: #e2e8f0;
+  --accent: #7c3aed;
+  --accent-muted: #a78bfa;
+  --text: #0f172a;
+  --text-muted: #64748b;
+}
+
+.dark {
+  --surface: #0b0f19;
+  --surface-elevated: #111827;
+  --border: #1f2937;
+  --accent: #8b5cf6;
+  --accent-muted: #6d28d9;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+}
+
+body {
+  color: var(--text);
+  background: var(--surface);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+@layer utilities {
+  .glass {
+    @apply backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border border-surface-border;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-violet-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent;
+  }
+
+  .shimmer-bg {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(139, 92, 246, 0.15) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+}
