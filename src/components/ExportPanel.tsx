@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import { Download, FileImage, Layers, Printer } from "lucide-react";
 import type { ExportFormat } from "@/lib/api";
 import type { FabricCanvasHandle } from "./FabricCanvas";
-import { downloadPngAtDpi } from "@/lib/download";
+import { downloadPng, downloadPngAtDpi } from "@/lib/download";
 import { downloadExport } from "@/lib/api";
 
 type Props = {
@@ -48,16 +48,24 @@ export function ExportPanel({
     try {
       if (exportFormat === "png") {
         const handle = canvasRef.current;
-        if (!handle) throw new Error("Canvas not ready");
-        const dataUrl = handle.getPngDataUrl(exportDpi);
+        if (!handle) throw new Error("Canvas not ready — wait for the editor to load");
+        const dataUrl = handle.getPngDataUrl();
         if (!dataUrl || dataUrl.length < 200) {
-          throw new Error("Canvas export failed — wait for layers to load");
+          throw new Error(
+            "Canvas export failed — ensure all layers finished loading, then try again"
+          );
         }
-        await downloadPngAtDpi(
-          dataUrl,
-          `textile-design-${exportDpi}dpi.png`,
-          exportDpi
-        );
+        const filename = `textile-design-${exportDpi}dpi.png`;
+        try {
+          if (exportDpi > 72) {
+            await downloadPngAtDpi(dataUrl, filename, exportDpi);
+          } else {
+            downloadPng(dataUrl, filename);
+          }
+        } catch {
+          // Fallback: still download at canvas resolution if upscale fails
+          downloadPng(dataUrl, filename.replace(`${exportDpi}dpi`, "export"));
+        }
         onExported();
         return;
       }
@@ -69,7 +77,7 @@ export function ExportPanel({
       const handle = canvasRef.current;
       let imageBase64: string | undefined;
       if (exportFormat === "tiff" && handle) {
-        const dataUrl = handle.getPngDataUrl(exportDpi);
+        const dataUrl = handle.getPngDataUrl();
         imageBase64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
       }
 

@@ -40,7 +40,7 @@ export type LayerInfo = {
 };
 
 export type FabricCanvasHandle = {
-  getPngDataUrl: (dpi?: number) => string;
+  getPngDataUrl: () => string;
 };
 
 type Props = {
@@ -85,10 +85,8 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
     );
   }, []);
 
-  const getExportMultiplier = (dpi: number) => Math.max(1, Math.round((dpi / 72) * 2));
-
   useImperativeHandle(ref, () => ({
-    getPngDataUrl: (dpi = 150) => {
+    getPngDataUrl: () => {
       const canvas = fabricRef.current;
       if (!canvas) return "";
       if (regionRectRef.current) {
@@ -96,10 +94,22 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
         regionRectRef.current = null;
       }
       canvas.renderAll();
-      return canvas.toDataURL({
-        format: "png",
-        multiplier: getExportMultiplier(dpi),
-      });
+
+      // Keep multiplier low; DPI upscaling happens in downloadPngAtDpi.
+      // High multipliers (e.g. 8 at 300 DPI) exceed browser limits and break export.
+      try {
+        const url = canvas.toDataURL({ format: "png", multiplier: 2 });
+        if (url && url.length > 200) return url;
+      } catch (err) {
+        console.warn("Canvas export multiplier=2 failed", err);
+      }
+
+      try {
+        return canvas.toDataURL({ format: "png", multiplier: 1 });
+      } catch (err) {
+        console.error("Canvas toDataURL failed (tainted canvas?)", err);
+        return "";
+      }
     },
   }));
 
