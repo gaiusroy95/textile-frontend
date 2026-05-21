@@ -75,9 +75,21 @@ async function fetchWithTimeout(
   }
 }
 
-export async function extractFabric(file: File): Promise<ExtractResponse> {
+export type InputType =
+  | "garment"
+  | "flat_design"
+  | "swatch"
+  | "paper_scan"
+  | "reference"
+  | "multi_swatch";
+
+export async function extractFabric(
+  file: File,
+  inputType: InputType = "garment"
+): Promise<ExtractResponse> {
   const form = new FormData();
   form.append("file", file);
+  form.append("input_type", inputType);
 
   const res = await fetchWithTimeout(
     `${API_URL}/extract-fabric`,
