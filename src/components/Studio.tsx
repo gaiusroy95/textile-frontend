@@ -38,6 +38,10 @@ import { ResultGallery } from "./ResultGallery";
 import { SeamlessPreview } from "./SeamlessPreview";
 import { FabricCanvas, type FabricCanvasHandle } from "./FabricCanvas";
 import { ExportPanel } from "./ExportPanel";
+import {
+  formatLayerDisplayName,
+  resolveLayerPickerColorSync,
+} from "@/lib/layerColor";
 import { LayerThumb } from "./LayerThumb";
 
 function applyPipelineResult(result: PipelineResult, prompt: string): Partial<AppState> {
@@ -50,6 +54,7 @@ function applyPipelineResult(result: PipelineResult, prompt: string): Partial<Ap
     url: l.url,
     originalUrl: l.url,
     name: l.name,
+    rgb: l.rgb,
     source: "separated" as const,
   }));
 
@@ -241,6 +246,7 @@ export function Studio() {
           url,
           originalUrl: url,
           name: l.name,
+          rgb: l.rgb,
           source: "separated" as const,
         };
       });
@@ -434,10 +440,12 @@ export function Studio() {
                         layer={l}
                         className="aspect-square w-full rounded object-cover bg-slate-800"
                       />
-                      <p className="truncate text-[10px] font-medium">{l.name}</p>
+                      <p className="truncate text-[10px] font-medium">
+                        {formatLayerDisplayName(l.name)}
+                      </p>
                       <input
                         type="color"
-                        value={l.color ?? "#8b5cf6"}
+                        value={resolveLayerPickerColorSync(l) ?? "#1e293b"}
                         onChange={(e) =>
                           handleLayerColorChange(l.id, e.target.value)
                         }

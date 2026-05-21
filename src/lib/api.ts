@@ -27,6 +27,7 @@ export type LayerItem = {
   name: string;
   url: string;
   image_base64?: string;
+  rgb?: [number, number, number];
 };
 
 export type JobRecord = {

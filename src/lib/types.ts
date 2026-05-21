@@ -25,6 +25,8 @@ export type CanvasLayer = {
   color?: string;
   /** Source image before recolor (for reset / re-tint). */
   originalUrl?: string;
+  /** Dominant RGB from auto-separation [r, g, b]. */
+  rgb?: [number, number, number];
 };
 
 export type AppState = {

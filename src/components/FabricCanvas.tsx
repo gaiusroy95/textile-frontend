@@ -14,12 +14,7 @@ import {
   type FabricObject,
 } from "fabric";
 import {
-  ArrowDown,
-  ArrowUp,
-  Copy,
   Crop,
-  Eye,
-  EyeOff,
   Layers,
   Merge,
   MousePointer2,
@@ -27,8 +22,12 @@ import {
   Palette,
   RotateCcw,
   Square,
-  Trash2,
 } from "lucide-react";
+import { LayerListRow } from "./LayerListRow";
+import {
+  parseLayerColorFromName,
+  resolveLayerPickerColor,
+} from "@/lib/layerColor";
 import { recolorLayerImage } from "@/lib/recolorLayer";
 import type { CanvasLayer } from "@/lib/types";
 
@@ -72,6 +71,7 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
   const [opacity, setOpacity] = useState(100);
   const [hasRegion, setHasRegion] = useState(false);
   const [colorBusy, setColorBusy] = useState(false);
+  const [pickerColor, setPickerColor] = useState("#8b5cf6");
   const skipLayersReloadRef = useRef(false);
 
   const syncLayerList = useCallback((canvas: Canvas) => {
@@ -114,17 +114,33 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
     });
     fabricRef.current = canvas;
 
+    const selectAt = (idx: number) => {
+      const objs = canvas
+        .getObjects()
+        .filter((o) => (o as FabricObject & { name?: string }).name !== "__region__");
+      const obj = objs[idx];
+      if (!obj) return;
+      setSelectedIndex(idx);
+      setOpacity(Math.round((obj.opacity ?? 1) * 100));
+    };
+
     canvas.on("selection:created", (e) => {
       const target = (e as { selected?: FabricObject[] }).selected?.[0];
       if (!target || (target as FabricObject & { name?: string }).name === "__region__") return;
-      const idx = canvas.getObjects().indexOf(target);
-      if (idx >= 0) setSelectedIndex(idx);
+      const objs = canvas
+        .getObjects()
+        .filter((o) => (o as FabricObject & { name?: string }).name !== "__region__");
+      const idx = objs.indexOf(target);
+      if (idx >= 0) selectAt(idx);
     });
     canvas.on("selection:updated", (e) => {
       const target = (e as { selected?: FabricObject[] }).selected?.[0];
       if (!target) return;
-      const idx = canvas.getObjects().indexOf(target);
-      if (idx >= 0) setSelectedIndex(idx);
+      const objs = canvas
+        .getObjects()
+        .filter((o) => (o as FabricObject & { name?: string }).name !== "__region__");
+      const idx = objs.indexOf(target);
+      if (idx >= 0) selectAt(idx);
     });
     canvas.on("selection:cleared", () => setSelectedIndex(null));
 
@@ -246,6 +262,36 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
 
   const selectedLayer =
     selectedIndex !== null ? layers[selectedIndex] : undefined;
+
+  const selectLayerAt = (index: number) => {
+    const canvas = fabricRef.current;
+    const obj = getObjects()[index];
+    if (canvas && obj) {
+      canvas.setActiveObject(obj);
+      canvas.renderAll();
+      setSelectedIndex(index);
+      setOpacity(Math.round((obj.opacity ?? 1) * 100));
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedLayer) return;
+
+    let cancelled = false;
+    resolveLayerPickerColor(selectedLayer).then((hex) => {
+      if (!cancelled) setPickerColor(hex);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedLayer?.id,
+    selectedLayer?.color,
+    selectedLayer?.name,
+    selectedLayer?.url,
+    selectedIndex,
+  ]);
 
   const getObjects = () => {
     const canvas = fabricRef.current;
@@ -574,49 +620,20 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
             <Layers className="h-4 w-4 text-violet-400" />
             Layers
           </h3>
-          <ul className="max-h-48 space-y-2 overflow-y-auto">
-            {layerList.map((layer, i) => (
-              <li
-                key={`${layer.id}-${i}`}
-                className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm ${
-                  selectedIndex === i
-                    ? "border-violet-500 bg-violet-500/10"
-                    : "border-surface-border"
-                }`}
-              >
-                <button
-                  type="button"
-                  className="truncate text-left flex-1"
-                  onClick={() => {
-                    const canvas = fabricRef.current;
-                    const obj = getObjects()[i];
-                    if (canvas && obj) {
-                      canvas.setActiveObject(obj);
-                      canvas.renderAll();
-                      setSelectedIndex(i);
-                    }
-                  }}
-                >
-                  {layer.name}
-                </button>
-                <div className="flex shrink-0 gap-0.5">
-                  <button type="button" onClick={() => moveLayer(i, 1)} className="rounded p-1 hover:bg-violet-500/10" aria-label="Move up">
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" onClick={() => moveLayer(i, -1)} className="rounded p-1 hover:bg-violet-500/10" aria-label="Move down">
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" onClick={() => toggleVisibility(i)} className="rounded p-1 hover:bg-violet-500/10">
-                    {layer.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5 opacity-50" />}
-                  </button>
-                  <button type="button" onClick={() => duplicateLayer(i)} className="rounded p-1 hover:bg-violet-500/10">
-                    <Copy className="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" onClick={() => removeLayer(i)} className="rounded p-1 hover:bg-red-500/10 text-red-400">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </li>
+          <ul className="max-h-64 space-y-2 overflow-y-auto">
+            {layers.map((layer, i) => (
+              <LayerListRow
+                key={layer.id}
+                layer={layer}
+                selected={selectedIndex === i}
+                visible={layerList[i]?.visible !== false}
+                onSelect={() => selectLayerAt(i)}
+                onMoveUp={() => moveLayer(i, 1)}
+                onMoveDown={() => moveLayer(i, -1)}
+                onToggleVisibility={() => toggleVisibility(i)}
+                onDuplicate={() => duplicateLayer(i)}
+                onRemove={() => removeLayer(i)}
+              />
             ))}
           </ul>
           {selectedIndex !== null && selectedLayer && (
@@ -629,24 +646,29 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
-                    value={selectedLayer.color ?? "#8b5cf6"}
+                    value={pickerColor}
                     disabled={colorBusy}
-                    onChange={(e) => changeLayerColor(e.target.value)}
+                    onChange={(e) => {
+                      setPickerColor(e.target.value);
+                      changeLayerColor(e.target.value);
+                    }}
                     className="h-9 w-12 cursor-pointer rounded border border-surface-border bg-transparent"
                     title="Pick layer color"
                   />
                   <input
                     type="text"
-                    value={selectedLayer.color ?? ""}
-                    placeholder="#hex"
+                    value={pickerColor}
                     disabled={colorBusy}
                     onChange={(e) => {
                       const v = e.target.value.trim();
+                      setPickerColor(v);
                       if (/^#[0-9A-Fa-f]{6}$/.test(v)) changeLayerColor(v);
                     }}
                     className="min-w-0 flex-1 rounded border border-surface-border bg-surface-elevated px-2 py-1.5 text-xs font-mono"
                   />
-                  {selectedLayer.color && (
+                  {(selectedLayer.color ||
+                    selectedLayer.rgb ||
+                    parseLayerColorFromName(selectedLayer.name)) && (
                     <button
                       type="button"
                       disabled={colorBusy}
