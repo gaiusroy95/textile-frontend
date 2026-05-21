@@ -1,6 +1,6 @@
 # TextileAI — Frontend
 
-Vite + React studio for uploading garments, running the textile pipeline, editing layers, and exporting PNGs.
+Vite + React studio for textile design: async full pipeline, layer separation, canvas editing, and multi-format export (PNG / TIFF / PSD).
 
 ## Stack
 
@@ -42,12 +42,13 @@ Open http://localhost:3000
    ```
 4. Deploy. Rebuild after changing `VITE_API_URL`.
 
-## Demo flow
+## Studio flow
 
-1. Upload garment image
-2. Extract fabric → seamless tile → AI variations
-3. Edit on canvas (Fabric.js)
-4. Export PNG
+1. Choose input type (garment, swatch, scan, multi-swatch, etc.)
+2. Optional: auto-separate layers, reduce watermark
+3. Upload → full pipeline job (extract → seamless → variations → layers)
+4. Edit on canvas: move, brush, region select, merge, reorder layers
+5. Export PNG (canvas), TIFF CMYK, or PSD / layered ZIP from session files
 
 ## Backend
 

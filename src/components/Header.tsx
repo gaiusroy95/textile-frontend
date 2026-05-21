@@ -22,7 +22,7 @@ export function Header() {
         <div className="flex items-center gap-3">
           <span className="hidden items-center gap-1.5 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-400 sm:flex">
             <Sparkles className="h-3 w-3" />
-            MVP Demo
+            Full Studio v1
           </span>
           <button
             type="button"

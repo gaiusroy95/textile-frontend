@@ -9,6 +9,7 @@ import {
 import {
   Canvas,
   FabricImage,
+  PencilBrush,
   Rect,
   type FabricObject,
 } from "fabric";
@@ -22,6 +23,7 @@ import {
   Layers,
   Merge,
   MousePointer2,
+  Paintbrush,
   Square,
   Trash2,
 } from "lucide-react";
@@ -59,7 +61,8 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
   const blobUrlsRef = useRef<string[]>([]);
   const regionRectRef = useRef<Rect | null>(null);
   const [layerList, setLayerList] = useState<LayerInfo[]>([]);
-  const [tool, setTool] = useState<"move" | "region">("move");
+  const [tool, setTool] = useState<"move" | "region" | "brush">("move");
+  const [brushSize, setBrushSize] = useState(12);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [opacity, setOpacity] = useState(100);
   const [hasRegion, setHasRegion] = useState(false);
@@ -282,6 +285,29 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
     setSelectedIndex(0);
   };
 
+  const enableBrush = () => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    setTool("brush");
+    canvas.selection = true;
+    canvas.defaultCursor = "crosshair";
+    if (!canvas.freeDrawingBrush) {
+      canvas.freeDrawingBrush = new PencilBrush(canvas);
+    }
+    const brush = canvas.freeDrawingBrush as PencilBrush;
+    brush.color = "rgba(167, 139, 250, 0.85)";
+    brush.width = brushSize;
+    canvas.isDrawingMode = true;
+  };
+
+  const disableDrawing = () => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    canvas.isDrawingMode = false;
+    canvas.defaultCursor = "default";
+    setTool("move");
+  };
+
   const startRegionDraw = () => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -406,7 +432,7 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => setTool("move")}
+          onClick={disableDrawing}
           className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
             tool === "move"
               ? "border-violet-500 bg-violet-500/20 text-violet-300"
@@ -416,6 +442,38 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
           <MousePointer2 className="h-3.5 w-3.5" />
           Move
         </button>
+        <button
+          type="button"
+          onClick={enableBrush}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+            tool === "brush"
+              ? "border-violet-500 bg-violet-500/20 text-violet-300"
+              : "border-surface-border hover:bg-violet-500/10"
+          }`}
+        >
+          <Paintbrush className="h-3.5 w-3.5" />
+          Brush
+        </button>
+        {tool === "brush" && (
+          <label className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+            Size
+            <input
+              type="range"
+              min={2}
+              max={48}
+              value={brushSize}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setBrushSize(v);
+                const canvas = fabricRef.current;
+                if (canvas?.freeDrawingBrush) {
+                  canvas.freeDrawingBrush.width = v;
+                }
+              }}
+              className="w-20 accent-violet-500"
+            />
+          </label>
+        )}
         <button
           type="button"
           onClick={startRegionDraw}
@@ -448,7 +506,7 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
         <div className="flex-1 overflow-hidden rounded-xl border border-surface-border bg-surface-elevated p-2 shadow-inner">
           <canvas ref={canvasRef} className="mx-auto max-w-full" />
           <p className="mt-2 text-center text-xs text-[var(--text-muted)]">
-            Move · resize · select region to split into a new layer
+            Move · brush · region select · merge layers
           </p>
         </div>
 
