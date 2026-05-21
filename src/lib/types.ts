@@ -21,6 +21,10 @@ export type CanvasLayer = {
   url: string;
   name: string;
   source?: "pipeline" | "separated" | "custom";
+  /** User-selected layer color (hex). */
+  color?: string;
+  /** Source image before recolor (for reset / re-tint). */
+  originalUrl?: string;
 };
 
 export type AppState = {
@@ -38,6 +42,8 @@ export type AppState = {
   selectedVariation: number | null;
   addAllVariationsToCanvas: boolean;
   canvasLayers: CanvasLayer[];
+  /** Per-layer tint colors keyed by layer id (sep-*, var-*, etc.). */
+  layerTintColors: Record<string, string>;
   exportDpi: number;
   exportFormat: ExportFormat;
   prompt: string;
@@ -72,6 +78,7 @@ export const initialState: AppState = {
   selectedVariation: null,
   addAllVariationsToCanvas: false,
   canvasLayers: [],
+  layerTintColors: {},
   exportDpi: 300,
   exportFormat: "png",
   prompt: "luxury woven textile, intricate pattern, fashion fabric",
@@ -82,37 +89,53 @@ export const initialState: AppState = {
   provider: null,
 };
 
+function applyTint(layer: CanvasLayer, tints: Record<string, string>): CanvasLayer {
+  const color = layer.color ?? tints[layer.id];
+  return {
+    ...layer,
+    originalUrl: layer.originalUrl ?? layer.url,
+    ...(color ? { color } : {}),
+  };
+}
+
 export function buildCanvasLayers(state: AppState): CanvasLayer[] {
+  const tints = state.layerTintColors;
   const layers: CanvasLayer[] = [];
 
-  state.separatedLayers.forEach((l) => layers.push(l));
-
-  if (state.seamlessTile) {
-    layers.push({ id: "seamless", url: state.seamlessTile, name: "Seamless tile", source: "pipeline" });
-  }
-  if (state.extractedImage) {
-    layers.push({ id: "extracted", url: state.extractedImage, name: "Extracted fabric", source: "pipeline" });
-  }
+  state.separatedLayers.forEach((l) => layers.push(applyTint(l, tints)));
 
   if (state.addAllVariationsToCanvas) {
     state.variations.forEach((url, i) => {
-      layers.unshift({
-        id: `var-${i}`,
-        url,
-        name: `AI Variation ${i + 1}`,
-        source: "pipeline",
-      });
+      layers.unshift(
+        applyTint(
+          {
+            id: `var-${i}`,
+            url,
+            originalUrl: url,
+            name: `AI Variation ${i + 1}`,
+            source: "pipeline",
+          },
+          tints
+        )
+      );
     });
   } else if (
     state.selectedVariation !== null &&
     state.variations[state.selectedVariation]
   ) {
-    layers.unshift({
-      id: `var-${state.selectedVariation}`,
-      url: state.variations[state.selectedVariation],
-      name: `AI Variation ${state.selectedVariation + 1}`,
-      source: "pipeline",
-    });
+    const url = state.variations[state.selectedVariation];
+    layers.unshift(
+      applyTint(
+        {
+          id: `var-${state.selectedVariation}`,
+          url,
+          originalUrl: url,
+          name: `AI Variation ${state.selectedVariation + 1}`,
+          source: "pipeline",
+        },
+        tints
+      )
+    );
   }
 
   return layers;

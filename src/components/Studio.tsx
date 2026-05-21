@@ -38,6 +38,7 @@ import { ResultGallery } from "./ResultGallery";
 import { SeamlessPreview } from "./SeamlessPreview";
 import { FabricCanvas, type FabricCanvasHandle } from "./FabricCanvas";
 import { ExportPanel } from "./ExportPanel";
+import { LayerThumb } from "./LayerThumb";
 
 function applyPipelineResult(result: PipelineResult, prompt: string): Partial<AppState> {
   const extractedUrl = result.extract.image_url;
@@ -47,6 +48,7 @@ function applyPipelineResult(result: PipelineResult, prompt: string): Partial<Ap
   const separated: CanvasLayer[] = result.layers.map((l, i) => ({
     id: `sep-${i}`,
     url: l.url,
+    originalUrl: l.url,
     name: l.name,
     source: "separated" as const,
   }));
@@ -82,6 +84,27 @@ export function Studio() {
     return buildCanvasLayers(s);
   }, []);
 
+  const handleLayerColorChange = useCallback(
+    (layerId: string, color: string | null) => {
+      setState((s) => {
+        const layerTintColors = { ...s.layerTintColors };
+        if (color) layerTintColors[layerId] = color;
+        else delete layerTintColors[layerId];
+
+        const separatedLayers = s.separatedLayers.map((l) => {
+          if (l.id !== layerId) return l;
+          const base = { ...l, originalUrl: l.originalUrl ?? l.url };
+          if (!color) return { ...base, color: undefined };
+          return { ...base, color };
+        });
+
+        const next = { ...s, layerTintColors, separatedLayers };
+        return { ...next, canvasLayers: buildCanvasLayers(next) };
+      });
+    },
+    []
+  );
+
   const runPipeline = useCallback(async (file: File) => {
     const preview = URL.createObjectURL(file);
     let prompt = initialState.prompt;
@@ -108,6 +131,7 @@ export function Studio() {
         seamlessPreview: null,
         variations: [],
         separatedLayers: [],
+        layerTintColors: {},
         canvasLayers: [],
       };
     });
@@ -210,12 +234,16 @@ export function Studio() {
     set({ loading: true, loadingMessage: "Separating color layers…", error: null });
     try {
       const res = await autoSeparateLayers(state.sessionId, state.inputType);
-      const separated: CanvasLayer[] = res.layers.map((l, i) => ({
-        id: `sep-${i}`,
-        url: resolveImageSrc(l.url, l.image_base64),
-        name: l.name,
-        source: "separated",
-      }));
+      const separated: CanvasLayer[] = res.layers.map((l, i) => {
+        const url = resolveImageSrc(l.url, l.image_base64);
+        return {
+          id: `sep-${i}`,
+          url,
+          originalUrl: url,
+          name: l.name,
+          source: "separated" as const,
+        };
+      });
       setState((s) => {
         const next = { ...s, separatedLayers: separated, loading: false };
         return { ...next, canvasLayers: refreshCanvas(next) };
@@ -396,15 +424,27 @@ export function Studio() {
                   <Layers className="h-4 w-4" />
                   Separated layers ({state.separatedLayers.length})
                 </h2>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {state.separatedLayers.map((l) => (
-                    <img
+                    <div
                       key={l.id}
-                      src={l.url}
-                      alt={l.name}
-                      title={l.name}
-                      className="aspect-square rounded border border-surface-border object-cover"
-                    />
+                      className="flex flex-col gap-1.5 rounded-lg border border-surface-border p-2"
+                    >
+                      <LayerThumb
+                        layer={l}
+                        className="aspect-square w-full rounded object-cover bg-slate-800"
+                      />
+                      <p className="truncate text-[10px] font-medium">{l.name}</p>
+                      <input
+                        type="color"
+                        value={l.color ?? "#8b5cf6"}
+                        onChange={(e) =>
+                          handleLayerColorChange(l.id, e.target.value)
+                        }
+                        className="h-8 w-full cursor-pointer rounded border border-surface-border bg-transparent"
+                        title={`Change color: ${l.name}`}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -491,7 +531,11 @@ export function Studio() {
                   onExported={() => set({ step: "export", error: null })}
                 />
               </div>
-              <FabricCanvas ref={canvasRef} layers={state.canvasLayers} />
+              <FabricCanvas
+                ref={canvasRef}
+                layers={state.canvasLayers}
+                onLayerColorChange={handleLayerColorChange}
+              />
             </div>
           </section>
         </div>

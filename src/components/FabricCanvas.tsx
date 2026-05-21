@@ -24,9 +24,15 @@ import {
   Merge,
   MousePointer2,
   Paintbrush,
+  Palette,
+  RotateCcw,
   Square,
   Trash2,
 } from "lucide-react";
+import { recolorLayerImage } from "@/lib/recolorLayer";
+import type { CanvasLayer } from "@/lib/types";
+
+type FabricImageWithMeta = FabricImage & { layerId?: string };
 
 export type LayerInfo = {
   id: string;
@@ -38,10 +44,9 @@ export type FabricCanvasHandle = {
   getPngDataUrl: (dpi?: number) => string;
 };
 
-type CanvasLayer = { id: string; url: string; name: string };
-
 type Props = {
   layers: CanvasLayer[];
+  onLayerColorChange?: (layerId: string, color: string | null) => void;
 };
 
 async function resolveLayerUrl(url: string): Promise<string> {
@@ -53,7 +58,7 @@ async function resolveLayerUrl(url: string): Promise<string> {
 }
 
 export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function FabricCanvas(
-  { layers },
+  { layers, onLayerColorChange },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,6 +71,8 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [opacity, setOpacity] = useState(100);
   const [hasRegion, setHasRegion] = useState(false);
+  const [colorBusy, setColorBusy] = useState(false);
+  const skipLayersReloadRef = useRef(false);
 
   const syncLayerList = useCallback((canvas: Canvas) => {
     const objs = canvas.getObjects().filter((o) => (o as FabricObject & { name?: string }).name !== "__region__");
@@ -129,9 +136,57 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
     };
   }, []);
 
+  const resolveDisplaySrc = async (layer: CanvasLayer): Promise<string> => {
+    const base = layer.originalUrl ?? layer.url;
+    if (layer.color) {
+      const baseSrc = await resolveLayerUrl(base);
+      return recolorLayerImage(baseSrc, layer.color);
+    }
+    return resolveLayerUrl(layer.url);
+  };
+
+  const applyColorToObject = async (
+    obj: FabricImageWithMeta,
+    layer: CanvasLayer,
+    hex: string | null
+  ) => {
+    const base = layer.originalUrl ?? layer.url;
+    const baseSrc = await resolveLayerUrl(base);
+    const displaySrc = hex ? await recolorLayerImage(baseSrc, hex) : baseSrc;
+    await obj.setSrc(displaySrc);
+    obj.layerId = layer.id;
+    fabricRef.current?.renderAll();
+  };
+
+  const changeLayerColor = async (hex: string | null) => {
+    if (selectedIndex === null) return;
+    const layer = layers[selectedIndex];
+    if (!layer) return;
+
+    const canvas = fabricRef.current;
+    const obj = getObjects()[selectedIndex] as FabricImageWithMeta | undefined;
+    if (!canvas || !obj) return;
+
+    setColorBusy(true);
+    try {
+      await applyColorToObject(obj, layer, hex);
+      skipLayersReloadRef.current = true;
+      onLayerColorChange?.(layer.id, hex);
+    } catch (e) {
+      console.error("Recolor failed", e);
+    } finally {
+      setColorBusy(false);
+    }
+  };
+
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+
+    if (skipLayersReloadRef.current) {
+      skipLayersReloadRef.current = false;
+      return;
+    }
 
     let cancelled = false;
 
@@ -152,10 +207,10 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
       for (const layer of layers) {
         if (cancelled) return;
         try {
-          const src = await resolveLayerUrl(layer.url);
+          const src = await resolveDisplaySrc(layer);
           if (src.startsWith("blob:")) blobUrlsRef.current.push(src);
 
-          const img = await FabricImage.fromURL(src);
+          const img = (await FabricImage.fromURL(src)) as FabricImageWithMeta;
           if (cancelled) return;
 
           const scale = Math.min(
@@ -172,6 +227,7 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
             selectable: true,
             name: layer.name,
           });
+          img.layerId = layer.id;
           canvas.add(img);
         } catch (e) {
           console.error("Failed to load layer", layer.name, e);
@@ -187,6 +243,9 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
       cancelled = true;
     };
   }, [layers, syncLayerList]);
+
+  const selectedLayer =
+    selectedIndex !== null ? layers[selectedIndex] : undefined;
 
   const getObjects = () => {
     const canvas = fabricRef.current;
@@ -560,19 +619,62 @@ export const FabricCanvas = forwardRef<FabricCanvasHandle, Props>(function Fabri
               </li>
             ))}
           </ul>
-          {selectedIndex !== null && (
-            <div className="mt-4">
-              <label className="text-xs text-[var(--text-muted)]">
-                Opacity: {opacity}%
-              </label>
-              <input
-                type="range"
-                min={10}
-                max={100}
-                value={opacity}
-                onChange={(e) => applyOpacity(Number(e.target.value))}
-                className="mt-1 w-full accent-violet-500"
-              />
+          {selectedIndex !== null && selectedLayer && (
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-2 flex items-center gap-1.5 text-xs font-medium text-[var(--text-muted)]">
+                  <Palette className="h-3.5 w-3.5 text-fuchsia-400" />
+                  Layer color
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={selectedLayer.color ?? "#8b5cf6"}
+                    disabled={colorBusy}
+                    onChange={(e) => changeLayerColor(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded border border-surface-border bg-transparent"
+                    title="Pick layer color"
+                  />
+                  <input
+                    type="text"
+                    value={selectedLayer.color ?? ""}
+                    placeholder="#hex"
+                    disabled={colorBusy}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      if (/^#[0-9A-Fa-f]{6}$/.test(v)) changeLayerColor(v);
+                    }}
+                    className="min-w-0 flex-1 rounded border border-surface-border bg-surface-elevated px-2 py-1.5 text-xs font-mono"
+                  />
+                  {selectedLayer.color && (
+                    <button
+                      type="button"
+                      disabled={colorBusy}
+                      onClick={() => changeLayerColor(null)}
+                      className="rounded p-1.5 hover:bg-violet-500/10"
+                      title="Reset to original"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">
+                  Changes apply to this layer only; export includes recolored view.
+                </p>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--text-muted)]">
+                  Opacity: {opacity}%
+                </label>
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  value={opacity}
+                  onChange={(e) => applyOpacity(Number(e.target.value))}
+                  className="mt-1 w-full accent-violet-500"
+                />
+              </div>
             </div>
           )}
           {layerList.length === 0 && (
